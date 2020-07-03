@@ -8,6 +8,12 @@ namespace BaGet.Core
     public interface IUrlGenerator
     {
         /// <summary>
+        /// Get the URL for the package source (also known as the "service index").
+        /// See: https://docs.microsoft.com/en-us/nuget/api/service-index
+        /// </summary>
+        string GetServiceIndexUrl();
+
+        /// <summary>
         /// Get the URL for the root of the package content resource.
         /// See: https://docs.microsoft.com/en-us/nuget/api/package-base-address-resource
         /// </summary>
@@ -88,5 +94,12 @@ namespace BaGet.Core
         /// <param name="id">The package's ID</param>
         /// <param name="version">The package's version</param>
         string GetPackageManifestDownloadUrl(string id, NuGetVersion version);
+
+        /// <summary>
+        /// Get the URL to download a package icon.
+        /// </summary>
+        /// <param name="id">The package's ID</param>
+        /// <param name="version">The package's version</param>
+        string GetPackageIconDownloadUrl(string id, NuGetVersion version);
     }
 }

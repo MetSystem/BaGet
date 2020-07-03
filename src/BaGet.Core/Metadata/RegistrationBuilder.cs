@@ -16,7 +16,7 @@ namespace BaGet.Core
 
         public virtual BaGetRegistrationIndexResponse BuildIndex(PackageRegistration registration)
         {
-            var versions = registration.Packages.Select(p => p.Version).ToList();
+            var sortedPackages = registration.Packages.OrderBy(p => p.Version).ToList();
 
             // TODO: Paging of registration items.
             // "Un-paged" example: https://api.nuget.org/v3/registration3/newtonsoft.json/index.json
@@ -33,9 +33,9 @@ namespace BaGet.Core
                     {
                         RegistrationPageUrl = _url.GetRegistrationIndexUrl(registration.PackageId),
                         Count = registration.Packages.Count(),
-                        Lower = versions.Min().ToNormalizedString().ToLowerInvariant(),
-                        Upper = versions.Max().ToNormalizedString().ToLowerInvariant(),
-                        ItemsOrNull = registration.Packages.Select(ToRegistrationIndexPageItem).ToList(),
+                        Lower = sortedPackages.First().Version.ToNormalizedString().ToLowerInvariant(),
+                        Upper = sortedPackages.Last().Version.ToNormalizedString().ToLowerInvariant(),
+                        ItemsOrNull = sortedPackages.Select(ToRegistrationIndexPageItem).ToList(),
                     }
                 }
             };
@@ -71,11 +71,14 @@ namespace BaGet.Core
                     Description = package.Description,
                     Downloads = package.Downloads,
                     HasReadme = package.HasReadme,
-                    IconUrl = package.IconUrlString,
+                    IconUrl = package.HasEmbeddedIcon
+                        ? _url.GetPackageIconDownloadUrl(package.Id, package.Version)
+                        : package.IconUrlString,
                     Language = package.Language,
                     LicenseUrl = package.LicenseUrlString,
                     Listed = package.Listed,
                     MinClientVersion = package.MinClientVersion,
+                    ReleaseNotes = package.ReleaseNotes,
                     PackageContentUrl = _url.GetPackageDownloadUrl(package.Id, package.Version),
                     PackageTypes = package.PackageTypes.Select(t => t.Name).ToList(),
                     ProjectUrl = package.ProjectUrlString,

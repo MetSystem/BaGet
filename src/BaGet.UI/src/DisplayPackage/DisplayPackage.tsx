@@ -2,7 +2,7 @@ import { Icon } from 'office-ui-fabric-react/lib/Icon';
 import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import timeago from 'timeago.js';
-import { coerce, gt, SemVer } from 'semver';
+import { coerce, eq, gt, SemVer } from 'semver';
 
 import { config } from '../config';
 import Dependencies from './Dependencies';
@@ -27,7 +27,6 @@ interface IDisplayPackageProps {
 
 interface IPackage {
   id: string;
-  latestVersion: string;
   hasReadme: boolean;
   description: string;
   readme: string;
@@ -38,6 +37,7 @@ interface IPackage {
   downloadUrl: string;
   repositoryUrl: string;
   repositoryType: string;
+  releaseNotes: string;
   totalDownloads: number;
   packageType: PackageType;
   downloads: number;
@@ -62,7 +62,7 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
   };
 
   private id: string;
-  private version?: string;
+  private version: SemVer | null;
 
   private registrationController: AbortController;
   private readmeController: AbortController;
@@ -74,7 +74,7 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
     this.readmeController = new AbortController();
 
     this.id = props.match.params.id.toLowerCase();
-    this.version = props.match.params.version;
+    this.version = coerce(props.match.params.version);
     this.state = DisplayPackage.initialState;
   }
 
@@ -94,7 +94,7 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
       this.readmeController = new AbortController();
 
       this.id = this.props.match.params.id.toLowerCase();
-      this.version = this.props.match.params.version;
+      this.version = coerce(this.props.match.params.version);
       this.setState(DisplayPackage.initialState);
       this.componentDidMount();
     }
@@ -126,9 +126,13 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
         if (!entry.catalogEntry.listed) continue;
 
         const normalizedVersion = this.normalizeVersion(entry.catalogEntry.version);
-        const isCurrent = !!this.version
-          ? normalizedVersion === this.version
-          : normalizedVersion === latestVersion;
+        const coercedVersion = coerce(entry.catalogEntry.version);
+
+        if (coercedVersion === null) continue;
+
+        const isCurrent = latestVersion !== null && coercedVersion !== null
+          ? eq(coercedVersion, !!this.version ? this.version : latestVersion)
+          : false;
 
         versions.push({
           date: new Date(entry.catalogEntry.published),
@@ -167,7 +171,6 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
             downloadUrl: currentItem.packageContent,
             packageType,
             lastUpdate,
-            latestVersion,
             normalizedVersion: this.normalizeVersion(currentItem.catalogEntry.version),
             readme,
             totalDownloads: results.totalDownloads,
@@ -202,7 +205,12 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
       );
     } else if (!this.state.package) {
       return (
-        <div>Could not find package '{this.id}'.</div>
+        <div>
+          <h2>Oops, package not found...</h2>
+          <p>Could not find package '{this.id}'.</p>
+          <p>You can try searching on <a href={`https://www.nuget.org/packages?q=${this.id}`} target="_blank" rel="noopener noreferrer">nuget.org</a> package.</p>
+          <p>Think there's a problem? Consider taking a look at our <a href="https://loic-sharma.github.io/BaGet/" target="_blank" rel="noopener noreferrer">documentation</a> or asking for help on our <a href="https://github.com/loic-sharma/BaGet/issues" target="_blank" rel="noopener noreferrer">GitHub project</a></p>
+        </div>
       );
     } else {
       return (
@@ -246,6 +254,12 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
             <ExpandableSection title="Dependents" expanded={false}>
               <Dependents packageId={this.state.package.id} />
             </ExpandableSection>
+
+            {this.state.package.releaseNotes &&
+              <ExpandableSection title="Release Notes" expanded={false}>
+                <div className="package-release-notes" >{this.state.package.releaseNotes}</div>
+              </ExpandableSection>
+            }
 
             <ExpandableSection title="Dependencies" expanded={false}>
               <Dependencies dependencyGroups={this.state.package.dependencyGroups} />
@@ -295,7 +309,7 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
             </div>
 
             <div>
-              <h1>Authors</h1>
+              <h2>Authors</h2>
 
               <p>{(!this.state.package.authors) ? 'Unknown' : this.state.package.authors}</p>
             </div>
@@ -316,8 +330,7 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
       : version.substring(0, buildMetadataStart);
   }
 
-  private latestVersion(index: Registration.IRegistrationIndex): string | null {
-    let latestVersionString: string | null = null;
+  private latestVersion(index: Registration.IRegistrationIndex): SemVer | null {
     let latestVersion: SemVer | null = null;
     for (const entry of index.items[0].items) {
       if (!entry.catalogEntry.listed) continue;
@@ -325,13 +338,12 @@ class DisplayPackage extends React.Component<IDisplayPackageProps, IDisplayPacka
       let entryVersion = coerce(entry.catalogEntry.version);
       if (!!entryVersion) {
         if (latestVersion === null || gt(entryVersion, latestVersion)) {
-          latestVersionString = entry.catalogEntry.version;
           latestVersion = entryVersion;
         }
       }
     }
 
-    return latestVersionString;
+    return latestVersion;
   }
 }
 

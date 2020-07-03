@@ -1,9 +1,9 @@
 using System;
-using System.Threading;
+using System.IO;
+using System.Threading.Tasks;
 using BaGet.Core;
-using BaGet.Extensions;
+using BaGet.Hosting;
 using McMaster.Extensions.CommandLineUtils;
-using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,8 +13,14 @@ namespace BaGet
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
+            var host = CreateHostBuilder(args).Build();
+            if (!host.ValidateStartupOptions())
+            {
+                return;
+            }
+
             var app = new CommandLineApplication
             {
                 Name = "baget",
@@ -27,47 +33,53 @@ namespace BaGet
             {
                 import.Command("downloads", downloads =>
                 {
-                    downloads.OnExecute(async () =>
+                    downloads.OnExecuteAsync(async cancellationToken =>
                     {
-                        var provider = CreateHostBuilder(args).Build().Services;
+                        using (var scope = host.Services.CreateScope())
+                        {
+                            var importer = scope.ServiceProvider.GetRequiredService<DownloadsImporter>();
 
-                        await provider
-                            .GetRequiredService<DownloadsImporter>()
-                            .ImportAsync(CancellationToken.None);
+                            await importer.ImportAsync(cancellationToken);
+                        }
                     });
                 });
             });
 
-            app.OnExecute(() =>
+            app.Option("--urls", "The URLs that BaGet should bind to.", CommandOptionType.SingleValue);
+
+            app.OnExecuteAsync(async cancellationToken =>
             {
-                CreateWebHostBuilder(args).Build().Run();
+                await host.RunMigrationsAsync(cancellationToken);
+                await host.RunAsync(cancellationToken);
             });
 
-            app.Execute(args);
+            await app.ExecuteAsync(args);
         }
-
-        public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
-            WebHost.CreateDefaultBuilder(args)
-                .UseStartup<Startup>()
-                .UseKestrel(options =>
-                {
-                    // Remove the upload limit from Kestrel. If needed, an upload limit can
-                    // be enforced by a reverse proxy server, like IIS.
-                    options.Limits.MaxRequestBodySize = null;
-                })
-                .ConfigureAppConfiguration((builderContext, config) =>
-                {
-                    var root = Environment.GetEnvironmentVariable("BAGET_CONFIG_ROOT");
-                    if (!string.IsNullOrEmpty(root))
-                        config.SetBasePath(root);
-                });
 
         public static IHostBuilder CreateHostBuilder(string[] args)
         {
-            return new HostBuilder()
-                .ConfigureBaGetConfiguration(args)
-                .ConfigureBaGetServices()
-                .ConfigureBaGetLogging();
+            return Host
+                .CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((ctx, config) =>
+                {
+                    var root = Environment.GetEnvironmentVariable("BAGET_CONFIG_ROOT");
+
+                    if (!string.IsNullOrEmpty(root))
+                    {
+                        config.SetBasePath(root);
+                    }
+                })
+                .ConfigureWebHostDefaults(web =>
+                {
+                    web.ConfigureKestrel(options =>
+                    {
+                        // Remove the upload limit from Kestrel. If needed, an upload limit can
+                        // be enforced by a reverse proxy server, like IIS.
+                        options.Limits.MaxRequestBodySize = null;
+                    });
+
+                    web.UseStartup<Startup>();
+                });
         }
     }
 }
